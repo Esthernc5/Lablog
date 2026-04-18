@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desafío Logístico: El Laberinto del Contenedor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .cell { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 14px; border: 1px solid #f1f5f9; }
+        .wall { background-color: #1e293b; color: #1e293b; }
+        .path { background-color: #ffffff; }
+        .player { background-color: #3b82f6; color: white; border-radius: 4px; z-index: 10; position: relative; }
+        .goal { background-color: #22c55e; color: white; font-weight: bold; border-radius: 4px; }
+        .obstacle-x { background-color: #fee2e2; color: #ef4444; font-weight: bold; } /* Riesgo */
+        .obstacle-a { background-color: #fef9c3; color: #a16207; font-weight: bold; } /* Aduana */
+        .obstacle-i { background-color: #ffedd5; color: #ea580c; font-weight: bold; } /* Inspección */
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-2xl w-full">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="container"></i> Ruta Crítica Logística
+                </h1>
+                <p class="text-slate-500 text-sm">Lleva el contenedor (■) al puerto destino (P)</p>
+            </div>
+            <div class="text-right">
+                <span id="moves" class="text-lg font-mono font-bold text-blue-600">Movimientos: 0</span>
+            </div>
+        </div>
+
+        <!-- Maze Grid -->
+        <div id="maze-container" class="grid bg-slate-200 p-1 rounded border-4 border-slate-300 mx-auto" style="width: fit-content;">
+            <!-- Generado por JS -->
+        </div>
+
+        <!-- Leyenda -->
+        <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div class="flex items-center gap-2"><span class="w-4 h-4 wall rounded"></span> Pared / Canal cerrado</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 obstacle-x flex items-center justify-center rounded">X</span> Riesgo Logístico</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 obstacle-a flex items-center justify-center rounded">A</span> Aduana</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 obstacle-i flex items-center justify-center rounded">I</span> Inspección</div>
+        </div>
+
+        <!-- Controles Móviles -->
+        <div class="mt-8 flex flex-col items-center gap-2 md:hidden">
+            <button onclick="movePlayer(0, -1)" class="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center"><i data-lucide="chevron-up"></i></button>
+            <div class="flex gap-4">
+                <button onclick="movePlayer(-1, 0)" class="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center"><i data-lucide="chevron-left"></i></button>
+                <button onclick="movePlayer(1, 0)" class="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center"><i data-lucide="chevron-right"></i></button>
+            </div>
+            <button onclick="movePlayer(0, 1)" class="w-12 h-12 bg-slate-200 rounded-full flex items-center justify-center"><i data-lucide="chevron-down"></i></button>
+        </div>
+
+        <button onclick="resetGame()" class="mt-6 w-full py-3 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors">
+            Reiniciar Operación
+        </button>
+    </div>
+
+    <!-- Modal de Victoria -->
+    <div id="win-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white p-8 rounded-3xl text-center max-w-sm w-full">
+            <i data-lucide="trophy" class="w-16 h-16 text-yellow-500 mx-auto mb-4"></i>
+            <h2 class="text-2xl font-bold mb-2">¡Carga Entregada!</h2>
+            <p class="text-slate-600 mb-6">Has superado las aduanas y riesgos logísticos con éxito.</p>
+            <button onclick="resetGame()" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold">Jugar de nuevo</button>
+        </div>
+    </div>
+
+    <script>
+        // Leyenda del mapa: #=Pared, .=Camino, X=Riesgo, A=Aduana, I=Inspección, S=Inicio, P=Puerto
+        const mazeMap = [
+            "##########P#",
+            "#..........#",
+            "#.###.####.#",
+            "#...X.#....#",
+            "###.#.#.####",
+            "#A..#...I..#",
+            "#.#######.##",
+            "#.#...X....#",
+            "#.A.#.####.#",
+            "#...#......#",
+            "S###########"
+        ];
+
+        const rows = mazeMap.length;
+        const cols = mazeMap[0].length;
+        let playerPos = { x: 0, y: 10 };
+        let moves = 0;
+
+        function initMaze() {
+            const container = document.getElementById('maze-container');
+            container.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+            render();
+            lucide.createIcons();
+        }
+
+        function render() {
+            const container = document.getElementById('maze-container');
+            container.innerHTML = '';
+            
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const char = mazeMap[y][x];
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    
+                    if (char === '#') cell.classList.add('wall');
+                    else if (char === 'X') { cell.classList.add('obstacle-x'); cell.innerText = 'X'; }
+                    else if (char === 'A') { cell.classList.add('obstacle-a'); cell.innerText = 'A'; }
+                    else if (char === 'I') { cell.classList.add('obstacle-i'); cell.innerText = 'I'; }
+                    else if (char === 'P') { cell.classList.add('goal'); cell.innerText = 'P'; }
+                    else cell.classList.add('path');
+
+                    if (playerPos.x === x && playerPos.y === y) {
+                        cell.classList.add('player');
+                        cell.innerText = '■';
+                    }
+                    
+                    container.appendChild(cell);
+                }
+            }
+            document.getElementById('moves').innerText = `Movimientos: ${moves}`;
+        }
+
+        function movePlayer(dx, dy) {
+            const newX = playerPos.x + dx;
+            const newY = playerPos.y + dy;
+
+            if (newX >= 0 && newX < cols && newY >= 0 && newY < rows) {
+                const targetCell = mazeMap[newY][newX];
+                if (targetCell !== '#') {
+                    playerPos = { x: newX, y: newY };
+                    moves++;
+                    render();
+                    
+                    if (targetCell === 'P') {
+                        document.getElementById('win-modal').style.display = 'flex';
+                    }
+                }
+            }
+        }
+
+        function resetGame() {
+            playerPos = { x: 0, y: 10 };
+            moves = 0;
+            document.getElementById('win-modal').style.display = 'none';
+            render();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') movePlayer(0, -1);
+            if (e.key === 'ArrowDown') movePlayer(0, 1);
+            if (e.key === 'ArrowLeft') movePlayer(-1, 0);
+            if (e.key === 'ArrowRight') movePlayer(1, 0);
+        });
+
+        window.onload = initMaze;
+    </script>
+</body>
+</html>
